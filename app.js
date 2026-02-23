@@ -61,7 +61,13 @@ function generateProfiles(count = 12) {
       title: sample(JOBS),
       bio: sample(BIOS),
       tags: pickTags(),
-      img: imgFor(sample(UNSPLASH_SEEDS)),
+      // Multi-photo support for double-tap
+      imgs: [
+        imgFor(sample(UNSPLASH_SEEDS)),
+        imgFor(sample(UNSPLASH_SEEDS)),
+        imgFor(sample(UNSPLASH_SEEDS)),
+      ],
+      imgIndex: 0,
     });
   }
   return profiles;
@@ -78,17 +84,127 @@ const superLikeBtn = document.getElementById("superLikeBtn");
 
 let profiles = [];
 
+// -------------------
+// Helpers for "top card"
+// -------------------
+function topCardEl() {
+  // last child is visually on top (based on how they're appended)
+  return deckEl.querySelector(".card:last-child");
+}
+
+function topProfile() {
+  const card = topCardEl();
+  if (!card) return null;
+  const id = card.dataset.id;
+  return profiles.find(p => p.id === id) || null;
+}
+
+function removeTopProfile() {
+  const card = topCardEl();
+  if (!card) return;
+
+  const id = card.dataset.id;
+  profiles = profiles.filter(p => p.id !== id);
+  card.remove();
+
+  if (profiles.length === 0) resetDeck();
+}
+
+function animateAndRemove(direction) {
+  const card = topCardEl();
+  if (!card) return;
+
+  card.style.transition = "transform 250ms ease, opacity 250ms ease";
+  card.style.opacity = "0";
+
+  if (direction === "left")  card.style.transform = "translateX(-120%) rotate(-12deg)";
+  if (direction === "right") card.style.transform = "translateX(120%) rotate(12deg)";
+  if (direction === "up")    card.style.transform = "translateY(-120%)";
+
+  setTimeout(() => {
+    removeTopProfile();
+  }, 260);
+}
+
+function doNope() { animateAndRemove("left"); }
+function doLike() { animateAndRemove("right"); }
+function doSuperLike() { animateAndRemove("up"); }
+
+// -------------------
+// Gesture binding
+// -------------------
+function bindGestures(card) {
+  // avoid double-binding
+  if (card.dataset.gesturesBound === "1") return;
+  card.dataset.gesturesBound = "1";
+
+  let startX = 0, startY = 0;
+  let dragging = false;
+
+  card.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    card.setPointerCapture(e.pointerId);
+    card.style.transition = "none";
+  });
+
+  card.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    const rot = dx / 20;
+    card.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg)`;
+  });
+
+  card.addEventListener("pointerup", (e) => {
+    if (!dragging) return;
+    dragging = false;
+
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    // thresholds
+    const TH = 90;
+    const TH_UP = -90;
+
+    card.style.transition = "transform 200ms ease";
+
+    if (dx <= -TH) return doNope();
+    if (dx >= TH) return doLike();
+    if (dy <= TH_UP) return doSuperLike();
+
+    // snap back
+    card.style.transform = "";
+  });
+
+  // Double-tap / double-click: show next photo in the profile
+  card.addEventListener("dblclick", () => {
+    const p = topProfile();
+    if (!p) return;
+
+    p.imgIndex = (p.imgIndex + 1) % p.imgs.length;
+
+    const img = card.querySelector("img.card__media");
+    if (img) img.src = p.imgs[p.imgIndex];
+  });
+}
+
+// -------------------
+// Render
+// -------------------
 function renderDeck() {
   deckEl.setAttribute("aria-busy", "true");
   deckEl.innerHTML = "";
 
-  profiles.forEach((p, idx) => {
+  profiles.forEach((p) => {
     const card = document.createElement("article");
     card.className = "card";
+    card.dataset.id = p.id;
 
     const img = document.createElement("img");
     img.className = "card__media";
-    img.src = p.img;
+    img.src = p.imgs[p.imgIndex] || p.imgs[0];
     img.alt = `${p.name} — profile photo`;
 
     const body = document.createElement("div");
@@ -124,6 +240,10 @@ function renderDeck() {
     deckEl.appendChild(card);
   });
 
+  // Bind gestures after render so the top card exists
+  const top = topCardEl();
+  if (top) bindGestures(top);
+
   deckEl.removeAttribute("aria-busy");
 }
 
@@ -132,16 +252,12 @@ function resetDeck() {
   renderDeck();
 }
 
-// Controls (intentionally not implemented)
-likeBtn.addEventListener("click", () => {
-  console.log("Like clicked.");
-});
-nopeBtn.addEventListener("click", () => {
-  console.log("Nope clicked.");
-});
-superLikeBtn.addEventListener("click", () => {
-  console.log("Super Like clicked.");
-});
+// -------------------
+// Controls
+// -------------------
+likeBtn.addEventListener("click", doLike);
+nopeBtn.addEventListener("click", doNope);
+superLikeBtn.addEventListener("click", doSuperLike);
 shuffleBtn.addEventListener("click", resetDeck);
 
 // Boot
