@@ -99,13 +99,16 @@ function topProfile() {
   return profiles.find(p => p.id === id) || null;
 }
 
-function removeTopProfile() {
-  const card = topCardEl();
+function removeProfileCard(card) {
   if (!card) return;
 
   const id = card.dataset.id;
   profiles = profiles.filter(p => p.id !== id);
   card.remove();
+
+  // After removal, bind gestures to the new top card (if any)
+  const next = topCardEl();
+  if (next) bindGestures(next);
 
   if (profiles.length === 0) resetDeck();
 }
@@ -113,6 +116,10 @@ function removeTopProfile() {
 function animateAndRemove(direction) {
   const card = topCardEl();
   if (!card) return;
+
+  // Prevent double-trigger on the same card during the animation window
+  if (card.dataset.removing === "1") return;
+  card.dataset.removing = "1";
 
   card.style.transition = "transform 250ms ease, opacity 250ms ease";
   card.style.opacity = "0";
@@ -122,7 +129,7 @@ function animateAndRemove(direction) {
   if (direction === "up")    card.style.transform = "translateY(-120%)";
 
   setTimeout(() => {
-    removeTopProfile();
+    removeProfileCard(card);
   }, 260);
 }
 
@@ -177,7 +184,12 @@ function bindGestures(card) {
     // snap back
     card.style.transform = "";
   });
-
+  
+  card.addEventListener("pointercancel", () => {
+    dragging = false;
+    card.style.transition = "transform 200ms ease";
+    card.style.transform = "";
+  });
   // Double-tap / double-click: show next photo in the profile
   card.addEventListener("dblclick", () => {
     const p = topProfile();
